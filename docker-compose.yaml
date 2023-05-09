@@ -72,7 +72,14 @@ services:
     restart: unless-stopped
     labels:
     - "traefik.enable=true"
-    - "traefik.http.routers.gitea.entrypoints=web,websecure"
+    # Must HTTPS
+    - "traefik.http.routers.gitea-http.entrypoints=web"
+    - "traefik.http.routers.gitea-http.rule=Host(`git.gnuweeb.org`) || Host(`git-testing.ntsc.eu.org`)"
+    - "traefik.http.middlewares.gitea-https.redirectscheme.scheme=https"
+    - "traefik.http.routers.gitea-http.middlewares=gitea-https@docker"
+
+    # LB
+    - "traefik.http.routers.gitea.entrypoints=websecure"
     - "traefik.http.routers.gitea.rule=Host(`git.gnuweeb.org`) || Host(`git-testing.ntsc.eu.org`)"
     - "traefik.http.routers.gitea.service=gitea-web"
     - "traefik.http.routers.gitea.tls.certresolver=myresolver"
