@@ -1,0 +1,96 @@
+version: '3'
+
+networks:
+  infra-core:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+      - subnet: 192.168.48.0/24
+        gateway: 192.168.48.1
+
+services:
+  traefik:
+    image: "traefik:v2.8"
+    restart: always
+    command:
+    - "--log.level=DEBUG"
+    - "--api.insecure=true"
+    - "--providers.docker=true"
+    - "--providers.docker.exposedbydefault=false"
+    - "--entrypoints.git-ssh.address=:19022"
+    - "--entrypoints.web.address=:80"
+    - "--entrypoints.web.forwardedHeaders.trustedIPs=192.168.48.0/24"
+    - "--entrypoints.websecure.address=:443"
+    - "--entrypoints.websecure.http.tls.certResolver=myresolver"
+    - "--entrypoints.websecure.http.tls.domains[0].main=ntsc.eu.org"
+    - "--entrypoints.websecure.http.tls.domains[0].sans=ntsc.eu.org"
+    - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+    - "--certificatesresolvers.myresolver.acme.email=richiisei@gmail.com"
+    - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    
+    - "--metrics.prometheus=true"
+    - "--metrics.prometheus.addEntryPointsLabels=true"
+    - "--metrics.prometheus.addrouterslabels=true"
+    - "--metrics.prometheus.addServicesLabels=true"
+    - "--entrypoints.metrics.address=:8082"
+    - "--metrics.prometheus.entryPoint=metrics"
+    
+    - "--experimental.http3=true"
+    - "--entrypoints.websecure.http3"
+    - "--entrypoints.websecure.http3.advertisedport=443"
+    networks:
+    - infra-core
+    expose:
+    - 80
+    - 8080
+    - 8082
+    - 443
+    - 19022
+    ports:
+    - "127.0.0.1:19022:19022"
+    - "80:80"
+    - "443:443"
+    - "127.0.0.1:32780:8080"
+    volumes:
+    - "/etc/timezone:/etc/timezone:ro"
+    - "/etc/localtime:/etc/localtime:ro"
+    - "/mnt/infra2/traefik/letsencrypt:/letsencrypt"
+    - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+  gitea:
+    image: gitea/gitea:1.19
+    environment:
+    - USER=git
+    - USER_UID=1000
+    - USER_GID=1000
+    # - GITEA__database__DB_TYPE=mysql
+    # - GITEA__database__HOST=x:3306
+    # - GITEA__database__NAME=a
+    # - GITEA__database__USER=x
+    # - GITEA__database__PASSWD=y
+    restart: unless-stopped
+    labels:
+    - "traefik.enable=true"
+    - "traefik.http.routers.gitea.entrypoints=web,websecure"
+    - "traefik.http.routers.gitea.rule=Host(`git.gnuweeb.org`) || Host(`git-testing.ntsc.eu.org`)"
+    - "traefik.http.routers.gitea.service=gitea-web"
+    - "traefik.http.routers.gitea.tls.certresolver=myresolver"
+    - "traefik.http.services.gitea-web.loadbalancer.server.port=3000"
+
+    # middleware
+    - "traefik.http.middlewares.forbid-metrics-access.replacepathregex.regex=^/metrics(.*)"
+    - "traefik.http.middlewares.forbid-metrics-access.replacepathregex.replacement=/403"
+    - "traefik.http.routers.gitea.middlewares=forbid-metrics-access@docker"
+    networks:
+    - infra-core
+    ports:
+    - "127.0.0.1:34880:3000"
+    - "127.0.0.1:19122:22"
+    expose:
+    - 3000
+    - 22
+    volumes:
+    - "/etc/timezone:/etc/timezone:ro"
+    - "/etc/localtime:/etc/localtime:ro"
+    - "/mnt/infra2/gitea/data:/data"
